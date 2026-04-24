@@ -2,21 +2,20 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>Mini Slither.io</title>
+    <title>Slither.io + Bots</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; }
+        body { margin: 0; overflow: hidden; background: #111; font-family: sans-serif; }
         canvas { display: block; }
         #ui {
             position: absolute; top: 20px; left: 20px; color: white;
-            pointer-events: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            pointer-events: none; text-shadow: 2px 2px 4px black;
         }
     </style>
 </head>
 <body>
     <div id="ui">
-        <h1 style="margin:0">Slither Clone</h1>
-        <p>Счёт: <span id="score">0</span></p>
-        <small>Управление: Движение мышью</small>
+        <h2 style="margin:0">Счёт: <span id="score">0</span></h2>
+        <p>Зажми ЛКМ для ускорения!</p>
     </div>
     <canvas id="game"></canvas>
 
@@ -25,142 +24,157 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
 
-// Настройки
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-
+const WORLD_SIZE = 2000;
 let score = 0;
-const mouse = { x: canvas.width / 2, y: canvas.height / 2 };
+let isBoosting = false;
 
-// Сущность Змейка
+const mouse = { x: 0, y: 0 };
+window.addEventListener('mousemove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('mousedown', () => isBoosting = true);
+window.addEventListener('mouseup', () => isBoosting = false);
+
 class Snake {
-    constructor() {
-        this.x = canvas.width / 2;
-        this.y = canvas.height / 2;
+    constructor(x, y, color, isBot = false) {
+        this.x = x; this.y = y;
+        this.color = color;
+        this.isBot = isBot;
         this.radius = 12;
         this.segments = [];
-        this.length = 20;
+        this.length = 30;
+        this.angle = Math.random() * Math.PI * 2;
         this.speed = 3;
-        this.angle = 0;
-        this.color = '#00ffcc';
+        this.turnSpeed = 0.08;
     }
 
     update() {
-        // Вычисляем угол к мыши
-        const dx = mouse.x - this.x;
-        const dy = mouse.y - this.y;
-        this.angle = Math.atan2(dy, dx);
+        let targetAngle;
+        if (this.isBot) {
+            // Простая логика бота: иногда менять направление
+            if (Math.random() < 0.02) this.targetBotAngle = Math.random() * Math.PI * 2;
+            this.angle += (this.targetBotAngle - this.angle) * 0.1;
+            this.speed = 3;
+        } else {
+            // Игрок
+            const dx = mouse.x - (canvas.width / 2);
+            const dy = mouse.y - (canvas.height / 2);
+            targetAngle = Math.atan2(dy, dx);
+            this.angle = targetAngle;
+            
+            if (isBoosting && this.length > 10) {
+                this.speed = 6;
+                this.length -= 0.1; // Трата массы при ускорении
+            } else {
+                this.speed = 3;
+            }
+        }
 
-        // Движение головы
         this.x += Math.cos(this.angle) * this.speed;
         this.y += Math.sin(this.angle) * this.speed;
 
-        // Добавляем текущую позицию в начало массива сегментов
-        this.segments.unshift({ x: this.x, y: this.y });
+        // Смерть об границы
+        if (this.x < 0 || this.x > WORLD_SIZE || this.y < 0 || this.y > WORLD_SIZE) {
+            this.die();
+        }
 
-        // Ограничиваем длину
-        if (this.segments.length > this.length) {
-            this.segments.pop();
+        this.segments.unshift({ x: this.x, y: this.y });
+        if (this.segments.length > this.length) this.segments.pop();
+    }
+
+    die() {
+        if (!this.isBot) {
+            alert("Вы погибли! Ваш счёт: " + Math.floor(score));
+            location.reload();
+        } else {
+            this.x = Math.random() * WORLD_SIZE;
+            this.y = Math.random() * WORLD_SIZE;
+            this.length = 30;
         }
     }
 
-    draw() {
-        // Рисуем хвост
+    draw(camX, camY) {
         ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
         ctx.strokeStyle = this.color;
         ctx.lineWidth = this.radius * 2;
-        
         ctx.beginPath();
-        ctx.moveTo(this.segments[0].x, this.segments[0].y);
-        for (let i = 1; i < this.segments.length; i++) {
-            ctx.lineTo(this.segments[i].x, this.segments[i].y);
-        }
+        this.segments.forEach((seg, i) => {
+            const sx = seg.x - camX + canvas.width / 2;
+            const sy = seg.y - camY + canvas.height / 2;
+            if (i === 0) ctx.moveTo(sx, sy);
+            else ctx.lineTo(sx, sy);
+        });
         ctx.stroke();
-
-        // Рисуем глаза
-        ctx.fillStyle = 'white';
-        const eyeX = this.x + Math.cos(this.angle) * 5;
-        const eyeY = this.y + Math.sin(this.angle) * 5;
-        ctx.beginPath();
-        ctx.arc(eyeX, eyeY, 4, 0, Math.PI * 2);
-        ctx.fill();
     }
 }
 
-// Еда
 class Food {
-    constructor() {
-        this.reset();
-    }
-
+    constructor() { this.reset(); }
     reset() {
-        this.x = Math.random() * canvas.width;
-        this.y = Math.random() * canvas.height;
-        this.radius = 5;
+        this.x = Math.random() * WORLD_SIZE;
+        this.y = Math.random() * WORLD_SIZE;
         this.color = `hsl(${Math.random() * 360}, 100%, 50%)`;
     }
-
-    draw() {
+    draw(camX, camY) {
+        const sx = this.x - camX + canvas.width / 2;
+        const sy = this.y - camY + canvas.height / 2;
         ctx.fillStyle = this.color;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = this.color;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.arc(sx, sy, 5, 0, Math.PI * 2);
         ctx.fill();
-        ctx.shadowBlur = 0;
     }
 }
 
-const player = new Snake();
-const foods = Array.from({ length: 30 }, () => new Food());
-
-// Обработка мыши
-window.addEventListener('mousemove', (e) => {
-    mouse.x = e.clientX;
-    mouse.y = e.clientY;
-});
+const player = new Snake(WORLD_SIZE/2, WORLD_SIZE/2, '#00ffcc');
+const bots = Array.from({ length: 5 }, () => new Snake(Math.random()*WORLD_SIZE, Math.random()*WORLD_SIZE, 'red', true));
+const foods = Array.from({ length: 100 }, () => new Food());
 
 function animate() {
-    // Очистка экрана
-    ctx.fillStyle = '#1a1a1a';
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    // Камера центрируется на игроке
+    const camX = player.x;
+    const camY = player.y;
+
+    ctx.fillStyle = '#111';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Сетка на фоне
-    ctx.strokeStyle = '#333';
+    // Рисуем границы мира
+    ctx.strokeStyle = 'red';
+    ctx.lineWidth = 5;
+    ctx.strokeRect(0 - camX + canvas.width/2, 0 - camY + canvas.height/2, WORLD_SIZE, WORLD_SIZE);
+
+    // Сетка
+    ctx.strokeStyle = '#222';
     ctx.lineWidth = 1;
-    for(let i=0; i<canvas.width; i+=50) {
-        ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i, canvas.height); ctx.stroke();
-    }
-    for(let i=0; i<canvas.height; i+=50) {
-        ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width, i); ctx.stroke();
+    for(let i=0; i<=WORLD_SIZE; i+=100) {
+        ctx.beginPath();
+        ctx.moveTo(i - camX + canvas.width/2, 0 - camY + canvas.height/2);
+        ctx.lineTo(i - camX + canvas.width/2, WORLD_SIZE - camY + canvas.height/2);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0 - camX + canvas.width/2, i - camY + canvas.height/2);
+        ctx.lineTo(WORLD_SIZE - camX + canvas.width/2, i - camY + canvas.height/2);
+        ctx.stroke();
     }
 
-    // Обновление и отрисовка еды
-    foods.forEach(food => {
-        food.draw();
-        
-        // Проверка столкновения с едой
-        const dist = Math.hypot(player.x - food.x, player.y - food.y);
-        if (dist < player.radius + food.radius) {
-            food.reset();
-            player.length += 2;
-            score += 10;
-            scoreEl.innerText = score;
+    foods.forEach(f => {
+        f.draw(camX, camY);
+        if (Math.hypot(player.x - f.x, player.y - f.y) < player.radius + 5) {
+            f.reset(); player.length += 2; score += 10;
+            scoreEl.innerText = Math.floor(score);
         }
     });
 
+    bots.forEach(bot => {
+        bot.update();
+        bot.draw(camX, camY);
+    });
+
     player.update();
-    player.draw();
+    player.draw(camX, camY);
 
     requestAnimationFrame(animate);
 }
-
-// Адаптация размера окна
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
-});
 
 animate();
 </script>
