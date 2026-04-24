@@ -2,206 +2,167 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>NEON STRIKE - Imba Edition</title>
+    <title>Mini Slither.io</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Courier New', Courier, monospace; }
+        body { margin: 0; overflow: hidden; background: #1a1a1a; font-family: sans-serif; }
         canvas { display: block; }
         #ui {
-            position: absolute; top: 20px; left: 20px; color: #0ff;
-            text-shadow: 0 0 10px #0ff; font-size: 20px; pointer-events: none;
-        }
-        #msg {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: #f0f; font-size: 40px; text-align: center; display: none;
-            text-shadow: 0 0 20px #f0f;
+            position: absolute; top: 20px; left: 20px; color: white;
+            pointer-events: none; text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
         }
     </style>
 </head>
 <body>
-    <div id="ui">SCORE: <span id="score">0</span></div>
-    <div id="msg">GAME OVER<br><span style="font-size: 20px">Нажми R чтобы воскреснуть</span></div>
+    <div id="ui">
+        <h1 style="margin:0">Slither Clone</h1>
+        <p>Счёт: <span id="score">0</span></p>
+        <small>Управление: Движение мышью</small>
+    </div>
     <canvas id="game"></canvas>
 
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const scoreEl = document.getElementById('score');
-const msgEl = document.getElementById('msg');
 
+// Настройки
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 let score = 0;
-let gameActive = true;
+const mouse = { x: canvas.width / 2, y: canvas.height / 2 };
 
-// Настройки игрока
-const player = {
-    x: 100, y: 300, w: 30, h: 30,
-    color: '#0ff',
-    dy: 0, jumpForce: -15,
-    gravity: 0.8,
-    grounded: false,
-    bullets: []
-};
+// Сущность Змейка
+class Snake {
+    constructor() {
+        this.x = canvas.width / 2;
+        this.y = canvas.height / 2;
+        this.radius = 12;
+        this.segments = [];
+        this.length = 20;
+        this.speed = 3;
+        this.angle = 0;
+        this.color = '#00ffcc';
+    }
 
-let obstacles = [];
-let particles = [];
-let frame = 0;
+    update() {
+        // Вычисляем угол к мыши
+        const dx = mouse.x - this.x;
+        const dy = mouse.y - this.y;
+        this.angle = Math.atan2(dy, dx);
 
-// Управление
-const keys = {};
-window.addEventListener('keydown', e => {
-    keys[e.code] = true;
-    if (e.code === 'KeyR' && !gameActive) resetGame();
-});
-window.addEventListener('keyup', e => keys[e.code] = false);
+        // Движение головы
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
 
-function createParticle(x, y, color) {
-    for(let i=0; i<8; i++) {
-        particles.push({
-            x, y, 
-            dx: (Math.random()-0.5)*10, 
-            dy: (Math.random()-0.5)*10, 
-            life: 1, 
-            color
-        });
+        // Добавляем текущую позицию в начало массива сегментов
+        this.segments.unshift({ x: this.x, y: this.y });
+
+        // Ограничиваем длину
+        if (this.segments.length > this.length) {
+            this.segments.pop();
+        }
+    }
+
+    draw() {
+        // Рисуем хвост
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = this.radius * 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(this.segments[0].x, this.segments[0].y);
+        for (let i = 1; i < this.segments.length; i++) {
+            ctx.lineTo(this.segments[i].x, this.segments[i].y);
+        }
+        ctx.stroke();
+
+        // Рисуем глаза
+        ctx.fillStyle = 'white';
+        const eyeX = this.x + Math.cos(this.angle) * 5;
+        const eyeY = this.y + Math.sin(this.angle) * 5;
+        ctx.beginPath();
+        ctx.arc(eyeX, eyeY, 4, 0, Math.PI * 2);
+        ctx.fill();
     }
 }
 
-function resetGame() {
-    score = 0;
-    obstacles = [];
-    player.y = 300;
-    player.dy = 0;
-    gameActive = true;
-    msgEl.style.display = 'none';
-    animate();
+// Еда
+class Food {
+    constructor() {
+        this.reset();
+    }
+
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.radius = 5;
+        this.color = `hsl(${Math.random() * 360}, 100%, 50%)`;
+    }
+
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
 }
+
+const player = new Snake();
+const foods = Array.from({ length: 30 }, () => new Food());
+
+// Обработка мыши
+window.addEventListener('mousemove', (e) => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+});
 
 function animate() {
-    if (!gameActive) return;
-    requestAnimationFrame(animate);
-    
-    // Очистка фона с эффектом шлейфа
-    ctx.fillStyle = 'rgba(5, 5, 5, 0.2)';
+    // Очистка экрана
+    ctx.fillStyle = '#1a1a1a';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Физика игрока
-    if (keys['Space'] && player.grounded) {
-        player.dy = player.jumpForce;
-        player.grounded = false;
-        createParticle(player.x, player.y + player.h, '#0ff');
+    // Сетка на фоне
+    ctx.strokeStyle = '#333';
+    ctx.lineWidth = 1;
+    for(let i=0; i<canvas.width; i+=50) {
+        ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i, canvas.height); ctx.stroke();
+    }
+    for(let i=0; i<canvas.height; i+=50) {
+        ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(canvas.width, i); ctx.stroke();
     }
 
-    player.dy += player.gravity;
-    player.y += player.dy;
-
-    // Пол
-    if (player.y + player.h > canvas.height - 50) {
-        player.y = canvas.height - 50 - player.h;
-        player.dy = 0;
-        player.grounded = true;
-    }
-
-    // Стрельба (автоматическая каждые 15 кадров)
-    if (frame % 15 === 0) {
-        player.bullets.push({x: player.x + player.w, y: player.y + player.h/2, r: 4});
-    }
-
-    // Отрисовка игрока с неоновым свечением
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = player.color;
-    ctx.fillStyle = player.color;
-    ctx.fillRect(player.x, player.y, player.w, player.h);
-    ctx.shadowBlur = 0;
-
-    // Пули
-    player.bullets.forEach((b, index) => {
-        b.x += 15;
-        ctx.fillStyle = '#ff0';
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.r, 0, Math.PI*2);
-        ctx.fill();
-        if (b.x > canvas.width) player.bullets.splice(index, 1);
-    });
-
-    // Препятствия/Враги
-    if (frame % 60 === 0) {
-        let size = Math.random() * 40 + 20;
-        obstacles.push({
-            x: canvas.width, 
-            y: canvas.height - 50 - size, 
-            w: size, h: size, 
-            hp: 3,
-            color: '#f0f'
-        });
-    }
-
-    obstacles.forEach((obs, oIdx) => {
-        obs.x -= 8 + (score / 1000); // Ускорение со временем
+    // Обновление и отрисовка еды
+    foods.forEach(food => {
+        food.draw();
         
-        ctx.shadowBlur = 15;
-        ctx.shadowColor = obs.color;
-        ctx.fillStyle = obs.color;
-        ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
-        
-        // Столкновение с игроком
-        if (player.x < obs.x + obs.w && player.x + player.w > obs.x &&
-            player.y < obs.y + obs.h && player.y + player.h > obs.y) {
-            gameActive = false;
-            msgEl.style.display = 'block';
-            createParticle(player.x, player.y, '#f00');
-        }
-
-        // Попадание пуль
-        player.bullets.forEach((b, bIdx) => {
-            if (b.x > obs.x && b.x < obs.x + obs.w && b.y > obs.y && b.y < obs.y + obs.h) {
-                obs.hp--;
-                player.bullets.splice(bIdx, 1);
-                createParticle(obs.x, obs.y, '#f0f');
-                if (obs.hp <= 0) {
-                    obstacles.splice(oIdx, 1);
-                    score += 100;
-                }
-            }
-        });
-
-        if (obs.x + obs.w < 0) {
-            obstacles.splice(oIdx, 1);
+        // Проверка столкновения с едой
+        const dist = Math.hypot(player.x - food.x, player.y - food.y);
+        if (dist < player.radius + food.radius) {
+            food.reset();
+            player.length += 2;
             score += 10;
+            scoreEl.innerText = score;
         }
     });
 
-    // Частицы
-    particles.forEach((p, i) => {
-        p.x += p.dx; p.y += p.dy;
-        p.life -= 0.02;
-        ctx.fillStyle = `rgba(${p.color === '#0ff' ? '0,255,255' : '255,0,255'}, ${p.life})`;
-        ctx.fillRect(p.x, p.y, 3, 3);
-        if (p.life <= 0) particles.splice(i, 1);
-    });
+    player.update();
+    player.draw();
 
-    // Рисуем «землю»
-    ctx.strokeStyle = '#0ff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(0, canvas.height - 50);
-    ctx.lineTo(canvas.width, canvas.height - 50);
-    ctx.stroke();
-
-    score++;
-    scoreEl.innerText = score;
-    frame++;
+    requestAnimationFrame(animate);
 }
 
-animate();
-
-// Ресайз окна
+// Адаптация размера окна
 window.addEventListener('resize', () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
 });
+
+animate();
 </script>
 </body>
 </html>
-
